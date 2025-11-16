@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>General Relativity Simulation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(17, 24, 39, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            color: white;
+            max-width: 320px;
+            backdrop-filter: blur(10px);
+        }
+        
+        h2 {
+            color: #22d3ee;
+            margin-bottom: 15px;
+            font-size: 1.25rem;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.875rem;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: #374151;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #22d3ee;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #22d3ee;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+        
+        input[type="range"]:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        #start-btn {
+            background: #0891b2;
+            color: white;
+        }
+        
+        #start-btn:hover:not(:disabled) {
+            background: #0e7490;
+        }
+        
+        #start-btn:disabled {
+            background: #4b5563;
+            cursor: not-allowed;
+        }
+        
+        #reset-btn {
+            background: #ea580c;
+            color: white;
+        }
+        
+        #reset-btn:hover {
+            background: #c2410c;
+        }
+        
+        .info {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #374151;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="controls">
+        <h2>General Relativity Simulation</h2>
+        
+        <div class="control-group">
+            <label>Mass Ratio: <span id="mass-value">1.0</span></label>
+            <input type="range" id="mass-ratio" min="0.1" max="5" step="0.1" value="1">
+        </div>
+        
+        <div class="control-group">
+            <label>Starting Point: <span id="point-value">5.0</span></label>
+            <input type="range" id="start-point" min="1" max="10" step="0.5" value="5">
+        </div>
+        
+        <div class="control-group">
+            <label>Starting Speed: <span id="speed-value">1.50</span></label>
+            <input type="range" id="start-speed" min="0" max="4" step="0.1" value="1.5">
+        </div>
+        
+        <div class="control-group">
+            <label>Starting Direction: <span id="direction-value">90</span>°</label>
+            <input type="range" id="start-direction" min="0" max="360" step="5" value="90">
+        </div>
+        
+        <div class="button-group">
+            <button id="start-btn">Start</button>
+            <button id="reset-btn">Reset</button>
+        </div>
+        
+        <div class="info">
+            🖱️ Drag to rotate camera • Scroll to zoom<br>
+            Orange sphere = massive body (fixed at center)<br>
+            Cyan sphere = small object (M = mass ratio × 10)<br>
+            Blue surface = gravity well from BOTH objects<br>
+            <strong>Watch the small object create its own dip!</strong>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // State variables
+        let isRunning = false;
+        let massRatio = 1;
+        let startPoint = 5;
+        let startSpeed = 1.5;
+        let startDirection = 90;
+        
+        let scene, camera, renderer;
+        let smallBody, massiveBody, surface, wireframe, trail, trailMassive;
+        let velocity = { x: 0, y: 0 };
+        let position = { x: 0, y: 0 };
+        let velocityMassive = { x: 0, y: 0 };
+        let positionMassive = { x: 0, y: 0 };
+        let trailPoints = [];
+        let trailPointsMassive = [];
+        
+        let isDragging = false;
+        let previousMouse = { x: 0, y: 0 };
+
+        // DOM elements
+        const container = document.getElementById('canvas-container');
+        const massRatioInput = document.getElementById('mass-ratio');
+        const startPointInput = document.getElementById('start-point');
+        const startSpeedInput = document.getElementById('start-speed');
+        const startDirectionInput = document.getElementById('start-direction');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        // Update display values
+        massRatioInput.addEventListener('input', (e) => {
+            massRatio = parseFloat(e.target.value);
+            document.getElementById('mass-value').textContent = massRatio.toFixed(1);
+            updateSmallBodySize();
+        });
+
+        startPointInput.addEventListener('input', (e) => {
+            startPoint = parseFloat(e.target.value);
+            document.getElementById('point-value').textContent = startPoint.toFixed(1);
+        });
+
+        startSpeedInput.addEventListener('input', (e) => {
+            startSpeed = parseFloat(e.target.value);
+            document.getElementById('speed-value').textContent = startSpeed.toFixed(2);
+        });
+
+        startDirectionInput.addEventListener('input', (e) => {
+            startDirection = parseFloat(e.target.value);
+            document.getElementById('direction-value').textContent = startDirection;
+        });
+
+        // Initialize scene
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000510);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(
+                60,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(0, 15, 20);
+            camera.lookAt(0, 0, 0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 1);
+            scene.add(ambientLight);
+
+            const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+            pointLight.position.set(10, 10, 10);
+            scene.add(pointLight);
+
+            // Create gravity well surface
+            const gridSize = 40;
+            const segments = 80;
+            const planeGeometry = new THREE.PlaneGeometry(gridSize, gridSize, segments, segments);
+            
+            const planeMaterial = new THREE.MeshPhongMaterial({
+                color: 0x2244ff,
+                side: THREE.DoubleSide,
+                wireframe: false,
+                shininess: 30,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            surface = new THREE.Mesh(planeGeometry, planeMaterial);
+            surface.rotation.x = -Math.PI / 2;
+            scene.add(surface);
+
+            // Create wireframe overlay
+            const wireframeGeometry = new THREE.PlaneGeometry(gridSize, gridSize, segments, segments);
+            const wireframeMaterial = new THREE.MeshBasicMaterial({
+                color: 0x4466ff,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.3
+            });
+            wireframe = new THREE.Mesh(wireframeGeometry, wireframeMaterial);
+            wireframe.rotation.x = -Math.PI / 2;
+            scene.add(wireframe);
+
+            // Update surface curvature
+            updateSurface(planeGeometry);
+            updateSurface(wireframeGeometry);
+            
+            // Store geometry references for continuous updates
+            window.surfaceGeometries = {
+                plane: planeGeometry,
+                wireframe: wireframeGeometry
+            };
+
+            // Create massive central body
+            const massiveBodyGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const massiveBodyMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xffaa00,
+                emissive: 0xff8800,
+                emissiveIntensity: 0.8,
+                shininess: 100
+            });
+            massiveBody = new THREE.Mesh(massiveBodyGeometry, massiveBodyMaterial);
+            scene.add(massiveBody);
+
+            // Add glow effect
+            const glowGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffaa00,
+                transparent: true,
+                opacity: 0.2
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            scene.add(glow);
+            
+            // Store glow reference to update position later
+            massiveBody.userData.glow = glow;
+
+            // Create small orbiting body
+            const smallBodyGeometry = new THREE.SphereGeometry(0.15 * massRatio, 16, 16);
+            const smallBodyMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x00ffff,
+                emissive: 0x0088ff,
+                emissiveIntensity: 0.5
+            });
+            smallBody = new THREE.Mesh(smallBodyGeometry, smallBodyMaterial);
+            smallBody.position.set(startPoint, 0, 0);
+            scene.add(smallBody);
+
+            // Trail
+            const trailGeometry = new THREE.BufferGeometry();
+            const trailMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00ffff,
+                transparent: true,
+                opacity: 0.6
+            });
+            trail = new THREE.Line(trailGeometry, trailMaterial);
+            scene.add(trail);
+            
+            // Trail for massive body
+            const trailMassiveGeometry = new THREE.BufferGeometry();
+            const trailMassiveMaterial = new THREE.LineBasicMaterial({ 
+                color: 0xffaa00,
+                transparent: true,
+                opacity: 0.4
+            });
+            trailMassive = new THREE.Line(trailMassiveGeometry, trailMassiveMaterial);
+            scene.add(trailMassive);
+
+            // Mouse controls
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function updateSurface(geometry) {
+            const positions = geometry.attributes.position.array;
+            const M_massive = 50; // Mass of central body (same as physics)
+            const M_small = massRatio * 10; // Mass of small body (same as physics)
+            
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const z = positions[i + 1];
+                
+                // Distance from massive body (at origin)
+                const r1 = Math.sqrt(x * x + z * z) + 0.5;
+                const depth1 = -(M_massive / 5) / (r1 * 0.5);
+                
+                // Distance from small body (if running)
+                let depth2 = 0;
+                if (isRunning && position.x !== undefined) {
+                    const dx = x - position.x;
+                    const dz = z - position.y;
+                    const r2 = Math.sqrt(dx * dx + dz * dz) + 0.5;
+                    depth2 = -(M_small / 5) / (r2 * 0.8);
+                }
+                
+                // Combine both gravity wells
+                positions[i + 2] = depth1 + depth2;
+            }
+            
+            geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
+        }
+
+        function updateSmallBodySize() {
+            if (smallBody && scene) {
+                scene.remove(smallBody);
+                
+                const newSize = 0.15 * massRatio;
+                const smallBodyGeometry = new THREE.SphereGeometry(newSize, 16, 16);
+                const smallBodyMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0x00ffff,
+                    emissive: 0x0088ff,
+                    emissiveIntensity: 0.5
+                });
+                smallBody = new THREE.Mesh(smallBodyGeometry, smallBodyMaterial);
+                smallBody.position.copy(smallBody.position);
+                scene.add(smallBody);
+            }
+        }
+
+        function onMouseDown(e) {
+            isDragging = true;
+            previousMouse = { x: e.clientX, y: e.clientY };
+        }
+
+        function onMouseMove(e) {
+            if (!isDragging) return;
+
+            const deltaX = e.clientX - previousMouse.x;
+            const deltaY = e.clientY - previousMouse.y;
+
+            const radius = Math.sqrt(
+                camera.position.x ** 2 + 
+                camera.position.y ** 2 + 
+                camera.position.z ** 2
+            );
+
+            const theta = Math.atan2(camera.position.x, camera.position.z);
+            const phi = Math.acos(camera.position.y / radius);
+
+            const newTheta = theta - deltaX * 0.01;
+            const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + deltaY * 0.01));
+
+            camera.position.x = radius * Math.sin(newPhi) * Math.sin(newTheta);
+            camera.position.y = radius * Math.cos(newPhi);
+            camera.position.z = radius * Math.sin(newPhi) * Math.cos(newTheta);
+            
+            camera.lookAt(0, 0, 0);
+
+            previousMouse = { x: e.clientX, y: e.clientY };
+        }
+
+        function onMouseUp() {
+            isDragging = false;
+        }
+
+        function onWheel(e) {
+            e.preventDefault();
+            const radius = Math.sqrt(
+                camera.position.x ** 2 + 
+                camera.position.y ** 2 + 
+                camera.position.z ** 2
+            );
+            
+            const newRadius = Math.max(10, Math.min(50, radius + e.deltaY * 0.05));
+            const scale = newRadius / radius;
+            
+            camera.position.multiplyScalar(scale);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isRunning && smallBody && massiveBody) {
+                const G = 1;
+                const M1 = 50; // Mass of large body
+                const M2 = massRatio * 10; // Mass of small body (scaled by mass ratio)
+                const dt = 0.016;
+
+                // Calculate distance between the two bodies
+                const dx = position.x - positionMassive.x;
+                const dy = position.y - positionMassive.y;
+                const r = Math.sqrt(dx * dx + dy * dy);
+
+                if (r > 1.2) {
+                    // Gravitational force magnitude: F = G * M1 * M2 / r^2
+                    const forceMagnitude = (G * M1 * M2) / (r * r);
+                    
+                    // Force direction (unit vector)
+                    const forceX = forceMagnitude * dx / r;
+                    const forceY = forceMagnitude * dy / r;
+                    
+                    // Acceleration = Force / Mass (F = ma, so a = F/m)
+                    // Small body experiences force pulling it toward massive body
+                    const ax1 = -forceX / M2;
+                    const ay1 = -forceY / M2;
+                    
+                    // Update velocities (only small body moves)
+                    velocity.x += ax1 * dt;
+                    velocity.y += ay1 * dt;
+
+                    // Update positions (massive body stays fixed at origin)
+                    position.x += velocity.x * dt;
+                    position.y += velocity.y * dt;
+
+                    // Update small body position on surface
+                    const surfaceR1 = Math.sqrt(position.x * position.x + position.y * position.y) + 0.5;
+                    const surfaceDepth1 = -M1 / (surfaceR1 * 0.5 * 10);
+                    smallBody.position.set(position.x, surfaceDepth1 + 0.2, position.y);
+
+                    // Massive body stays at origin
+                    massiveBody.position.set(0, 0, 0);
+                    if (massiveBody.userData.glow) {
+                        massiveBody.userData.glow.position.set(0, 0, 0);
+                    }
+
+                    // Update small body trail
+                    trailPoints.push(new THREE.Vector3(position.x, surfaceDepth1 + 0.2, position.y));
+                    if (trailPoints.length > 500) {
+                        trailPoints.shift();
+                    }
+
+                    const trailPositions = new Float32Array(trailPoints.length * 3);
+                    trailPoints.forEach((point, i) => {
+                        trailPositions[i * 3] = point.x;
+                        trailPositions[i * 3 + 1] = point.y;
+                        trailPositions[i * 3 + 2] = point.z;
+                    });
+                    trail.geometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+                } else {
+                    stopSimulation();
+                }
+            }
+            
+            // Update surface deformation continuously
+            if (window.surfaceGeometries) {
+                updateSurface(window.surfaceGeometries.plane);
+                updateSurface(window.surfaceGeometries.wireframe);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Control functions
+        function startSimulation() {
+            const angle = 0;
+            const directionRad = (startDirection * Math.PI) / 180;
+            
+            // Small body starts at specified distance
+            position = { 
+                x: startPoint * Math.cos(angle), 
+                y: startPoint * Math.sin(angle) 
+            };
+            velocity = { 
+                x: startSpeed * Math.cos(directionRad), 
+                y: startSpeed * Math.sin(directionRad) 
+            };
+            
+            // Massive body starts at origin with zero velocity
+            positionMassive = { x: 0, y: 0 };
+            velocityMassive = { x: 0, y: 0 };
+            
+            trailPoints = [];
+            trailPointsMassive = [];
+            isRunning = true;
+            
+            startBtn.textContent = 'Running';
+            startBtn.disabled = true;
+            massRatioInput.disabled = true;
+            startPointInput.disabled = true;
+            startSpeedInput.disabled = true;
+            startDirectionInput.disabled = true;
+        }
+
+        function stopSimulation() {
+            isRunning = false;
+            startBtn.textContent = 'Start';
+            startBtn.disabled = false;
+            massRatioInput.disabled = false;
+            startPointInput.disabled = false;
+            startSpeedInput.disabled = false;
+            startDirectionInput.disabled = false;
+        }
+
+        function resetSimulation() {
+            stopSimulation();
+            const angle = 0;
+            const directionRad = (startDirection * Math.PI) / 180;
+            
+            position = { 
+                x: startPoint * Math.cos(angle), 
+                y: startPoint * Math.sin(angle) 
+            };
+            velocity = { 
+                x: startSpeed * Math.cos(directionRad), 
+                y: startSpeed * Math.sin(directionRad) 
+            };
+            
+            positionMassive = { x: 0, y: 0 };
+            velocityMassive = { x: 0, y: 0 };
+            
+            trailPoints = [];
+            trailPointsMassive = [];
+            
+            if (smallBody) {
+                smallBody.position.set(position.x, 0, position.y);
+            }
+            
+            if (massiveBody) {
+                massiveBody.position.set(0, 0, 0);
+                if (massiveBody.userData.glow) {
+                    massiveBody.userData.glow.position.set(0, 0, 0);
+                }
+            }
+            
+            trail.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+        }
+
+        // Button event listeners
+        startBtn.addEventListener('click', startSimulation);
+        resetBtn.addEventListener('click', resetSimulation);
+
+        // Initialize and start
+        init();
+        animate();
+    </script>
+</body>
+</html>
