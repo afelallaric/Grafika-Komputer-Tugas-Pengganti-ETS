@@ -385,7 +385,7 @@
                 let depth2 = 0;
                 if (isRunning && position.x !== undefined) {
                     const dx = x - position.x;
-                    const dz = z - position.y;
+                    const dz = -z - position.y;
                     const r2 = Math.sqrt(dx * dx + dz * dz) + 0.5;
                     depth2 = -(M_small / 5) / (r2 * 0.8);
                 }
