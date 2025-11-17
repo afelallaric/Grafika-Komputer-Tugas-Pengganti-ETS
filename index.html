@@ -173,16 +173,19 @@
         </div>
     </div>
 
+    <!-- IMPORTMAP: samakan versi THREE & addons (GLTFLoader) -->
     <script type="importmap">
     {
         "imports": {
-            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js"
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
     }
     </script>
 
     <script type="module">
-        import * as THREE from 'three';
+        import * as THREE from "three";
+        import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
         // State variables
         let isRunning = false;
@@ -256,14 +259,22 @@
             container.appendChild(renderer.domElement);
 
             // Lighting
-            const ambientLight = new THREE.AmbientLight(0x404040, 1);
+            // Ambient sedikit dikurangi biar masih ada kontras
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
             scene.add(ambientLight);
 
-            const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+            // Key light lembut dari kanan-atas
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 25, 10); // kanan (+x), atas (+y), agak ke depan (+z)
+            scene.add(dirLight);
+
+            // Point light sebagai fill, lebih redup dari sebelumnya
+            const pointLight = new THREE.PointLight(0xffffff, 0.4, 100);
             pointLight.position.set(10, 10, 10);
             scene.add(pointLight);
 
-            // Create gravity well surface
+
+            // Gravity well surface
             const gridSize = 40;
             const segments = 80;
             const planeGeometry = new THREE.PlaneGeometry(gridSize, gridSize, segments, segments);
@@ -281,7 +292,7 @@
             surface.rotation.x = -Math.PI / 2;
             scene.add(surface);
 
-            // Create wireframe overlay
+            // Wireframe overlay
             const wireframeGeometry = new THREE.PlaneGeometry(gridSize, gridSize, segments, segments);
             const wireframeMaterial = new THREE.MeshBasicMaterial({
                 color: 0x4466ff,
@@ -293,50 +304,102 @@
             wireframe.rotation.x = -Math.PI / 2;
             scene.add(wireframe);
 
-            // Update surface curvature
             updateSurface(planeGeometry);
             updateSurface(wireframeGeometry);
             
-            // Store geometry references for continuous updates
             window.surfaceGeometries = {
                 plane: planeGeometry,
                 wireframe: wireframeGeometry
             };
 
-            // Create massive central body
-            const massiveBodyGeometry = new THREE.SphereGeometry(1, 32, 32);
-            const massiveBodyMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xffaa00,
-                emissive: 0xff8800,
-                emissiveIntensity: 0.8,
-                shininess: 100
-            });
-            massiveBody = new THREE.Mesh(massiveBodyGeometry, massiveBodyMaterial);
+            // ===== Earth (massive body) sebagai anchor di pusat =====
+            massiveBody = new THREE.Object3D();
+            massiveBody.position.set(0, 0, 0);
             scene.add(massiveBody);
 
-            // Add glow effect
-            const glowGeometry = new THREE.SphereGeometry(1.5, 32, 32);
-            const glowMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffaa00,
-                transparent: true,
-                opacity: 0.2
-            });
-            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-            scene.add(glow);
-            
-            // Store glow reference to update position later
-            massiveBody.userData.glow = glow;
 
-            // Create small orbiting body
-            const smallBodyGeometry = new THREE.SphereGeometry(0.15 * massRatio, 16, 16);
-            const smallBodyMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x00ffff,
-                emissive: 0x0088ff,
-                emissiveIntensity: 0.5
-            });
-            smallBody = new THREE.Mesh(smallBodyGeometry, smallBodyMaterial);
+            // Load Earth.glb dan normalisasi posisi + skala
+            const loader = new GLTFLoader();
+            loader.load(
+                "Earth.glb",
+                (gltf) => {
+                    const earth = gltf.scene;
+
+                    // Pusatkan ke (0,0,0)
+                    const box = new THREE.Box3().setFromObject(earth);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+                    earth.position.sub(center);
+
+                    // Skala ke diameter kira-kira 4 unit
+                    const size = new THREE.Vector3();
+                    box.getSize(size);
+                    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+                    const targetSize = 4;
+                    const scale = targetSize / maxDim;
+                    earth.scale.setScalar(scale);
+
+                    earth.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            if (child.material) child.material.needsUpdate = true;
+                        }
+                    });
+
+                    massiveBody.add(earth);
+                    console.log("Earth.glb loaded & normalized");
+                },
+                undefined,
+                (error) => {
+                    console.error("Failed to load Earth.glb", error);
+                }
+            );
+
+            // ===== Moon (small body) =====
+            // Anchor objek kecil: posisi anchor ini yang dipakai fisika
+            smallBody = new THREE.Object3D();
             smallBody.position.set(startPoint, 0, 0);
             scene.add(smallBody);
+
+            // Load Moon.glb ke dalam anchor smallBody
+            const moonLoader = new GLTFLoader();
+            moonLoader.load(
+                "Moon.glb",
+                (gltf) => {
+                    const moon = gltf.scene;
+
+                    // Pusatkan ke origin
+                    const box = new THREE.Box3().setFromObject(moon);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+                    moon.position.sub(center);
+
+                    // Skala lebih kecil dari Earth
+                    const size = new THREE.Vector3();
+                    box.getSize(size);
+                    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+                    const targetSize = 1.2; // Moon lebih kecil
+                    const scale = targetSize / maxDim;
+                    moon.scale.setScalar(scale);
+
+                    moon.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                            if (child.material) child.material.needsUpdate = true;
+                        }
+                    });
+
+                    smallBody.add(moon);
+                    updateSmallBodySize(); // sesuaikan dengan massRatio awal
+                    console.log("Moon.glb loaded & normalized");
+                },
+                undefined,
+                (error) => {
+                    console.error("Failed to load Moon.glb", error);
+                }
+            );
 
             // Trail
             const trailGeometry = new THREE.BufferGeometry();
@@ -348,7 +411,7 @@
             trail = new THREE.Line(trailGeometry, trailMaterial);
             scene.add(trail);
             
-            // Trail for massive body
+            // Trail massive body (kalau mau dipakai nanti)
             const trailMassiveGeometry = new THREE.BufferGeometry();
             const trailMassiveMaterial = new THREE.LineBasicMaterial({ 
                 color: 0xffaa00,
@@ -364,24 +427,22 @@
             renderer.domElement.addEventListener('mouseup', onMouseUp);
             renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
 
-            // Window resize
+            // Resize
             window.addEventListener('resize', onWindowResize);
         }
 
         function updateSurface(geometry) {
             const positions = geometry.attributes.position.array;
-            const M_massive = 50; // Mass of central body (same as physics)
-            const M_small = massRatio * 10; // Mass of small body (same as physics)
+            const M_massive = 50;
+            const M_small = massRatio * 10;
             
             for (let i = 0; i < positions.length; i += 3) {
                 const x = positions[i];
                 const z = positions[i + 1];
                 
-                // Distance from massive body (at origin)
                 const r1 = Math.sqrt(x * x + z * z) + 0.5;
                 const depth1 = -(M_massive / 5) / (r1 * 0.5);
                 
-                // Distance from small body (if running)
                 let depth2 = 0;
                 if (isRunning && position.x !== undefined) {
                     const dx = x - position.x;
@@ -390,7 +451,6 @@
                     depth2 = -(M_small / 5) / (r2 * 0.8);
                 }
                 
-                // Combine both gravity wells
                 positions[i + 2] = depth1 + depth2;
             }
             
@@ -398,20 +458,12 @@
             geometry.computeVertexNormals();
         }
 
+        // Sekarang: cukup scale anchor smallBody (Moon) sesuai massRatio
         function updateSmallBodySize() {
-            if (smallBody && scene) {
-                scene.remove(smallBody);
-                
-                const newSize = 0.15 * massRatio;
-                const smallBodyGeometry = new THREE.SphereGeometry(newSize, 16, 16);
-                const smallBodyMaterial = new THREE.MeshPhongMaterial({ 
-                    color: 0x00ffff,
-                    emissive: 0x0088ff,
-                    emissiveIntensity: 0.5
-                });
-                smallBody = new THREE.Mesh(smallBodyGeometry, smallBodyMaterial);
-                smallBody.position.copy(smallBody.position);
-                scene.add(smallBody);
+            if (smallBody) {
+                const baseScale = 0.5;          // size dasar Moon
+                const scale = baseScale * massRatio;
+                smallBody.scale.set(scale, scale, scale);
             }
         }
 
@@ -477,48 +529,38 @@
 
             if (isRunning && smallBody && massiveBody) {
                 const G = 1;
-                const M1 = 50; // Mass of large body
-                const M2 = massRatio * 10; // Mass of small body (scaled by mass ratio)
+                const M1 = 50;
+                const M2 = massRatio * 10;
                 const dt = 0.016;
 
-                // Calculate distance between the two bodies
                 const dx = position.x - positionMassive.x;
                 const dy = position.y - positionMassive.y;
                 const r = Math.sqrt(dx * dx + dy * dy);
 
                 if (r > 1.2) {
-                    // Gravitational force magnitude: F = G * M1 * M2 / r^2
                     const forceMagnitude = (G * M1 * M2) / (r * r);
                     
-                    // Force direction (unit vector)
                     const forceX = forceMagnitude * dx / r;
                     const forceY = forceMagnitude * dy / r;
                     
-                    // Acceleration = Force / Mass (F = ma, so a = F/m)
-                    // Small body experiences force pulling it toward massive body
                     const ax1 = -forceX / M2;
                     const ay1 = -forceY / M2;
                     
-                    // Update velocities (only small body moves)
                     velocity.x += ax1 * dt;
                     velocity.y += ay1 * dt;
 
-                    // Update positions (massive body stays fixed at origin)
                     position.x += velocity.x * dt;
                     position.y += velocity.y * dt;
 
-                    // Update small body position on surface
                     const surfaceR1 = Math.sqrt(position.x * position.x + position.y * position.y) + 0.5;
                     const surfaceDepth1 = -M1 / (surfaceR1 * 0.5 * 10);
                     smallBody.position.set(position.x, surfaceDepth1 + 0.2, position.y);
 
-                    // Massive body stays at origin
                     massiveBody.position.set(0, 0, 0);
                     if (massiveBody.userData.glow) {
                         massiveBody.userData.glow.position.set(0, 0, 0);
                     }
 
-                    // Update small body trail
                     trailPoints.push(new THREE.Vector3(position.x, surfaceDepth1 + 0.2, position.y));
                     if (trailPoints.length > 500) {
                         trailPoints.shift();
@@ -536,7 +578,6 @@
                 }
             }
             
-            // Update surface deformation continuously
             if (window.surfaceGeometries) {
                 updateSurface(window.surfaceGeometries.plane);
                 updateSurface(window.surfaceGeometries.wireframe);
@@ -545,12 +586,10 @@
             renderer.render(scene, camera);
         }
 
-        // Control functions
         function startSimulation() {
             const angle = 0;
             const directionRad = (startDirection * Math.PI) / 180;
             
-            // Small body starts at specified distance
             position = { 
                 x: startPoint * Math.cos(angle), 
                 y: startPoint * Math.sin(angle) 
@@ -560,7 +599,6 @@
                 y: startSpeed * Math.sin(directionRad) 
             };
             
-            // Massive body starts at origin with zero velocity
             positionMassive = { x: 0, y: 0 };
             velocityMassive = { x: 0, y: 0 };
             
@@ -620,13 +658,12 @@
             trail.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
         }
 
-        // Button event listeners
         startBtn.addEventListener('click', startSimulation);
         resetBtn.addEventListener('click', resetSimulation);
 
-        // Initialize and start
         init();
         animate();
     </script>
+
 </body>
 </html>
