@@ -321,7 +321,7 @@
             // Load Earth.glb dan normalisasi posisi + skala
             const loader = new GLTFLoader();
             loader.load(
-                "Earth.glb",
+                "src/Earth/Earth.glb",
                 (gltf) => {
                     const earth = gltf.scene;
 
@@ -365,7 +365,7 @@
             // Load Moon.glb ke dalam anchor smallBody
             const moonLoader = new GLTFLoader();
             moonLoader.load(
-                "Moon.glb",
+                "src/Moon/Moon.glb",
                 (gltf) => {
                     const moon = gltf.scene;
 
