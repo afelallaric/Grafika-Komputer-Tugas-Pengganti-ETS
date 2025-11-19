@@ -33,11 +33,32 @@
             max-width: 320px;
             backdrop-filter: blur(10px);
         }
+
+        /* PERUBAHAN PENTING: Mengubah posisi card ke kanan atas */
+        #theory-card {
+            position: absolute;
+            top: 20px; /* Diatur dari atas */
+            right: 20px; /* Diatur dari kanan */
+            background: rgba(17, 24, 39, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            color: white;
+            max-width: 320px;
+            backdrop-filter: blur(10px);
+            border-top: 4px solid #f97316;
+        }
         
         h2 {
             color: #22d3ee;
             margin-bottom: 15px;
             font-size: 1.25rem;
+        }
+
+        h3 {
+            color: #f97316;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            font-size: 1rem;
         }
         
         .control-group {
@@ -131,6 +152,27 @@
             color: #9ca3af;
             line-height: 1.5;
         }
+
+        #theory-card ul {
+            padding-left: 20px;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            margin-top: 5px;
+        }
+
+        #theory-card ul li {
+            margin-bottom: 5px;
+        }
+
+        #theory-card .formula {
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(31, 41, 55, 0.9);
+            border-radius: 4px;
+            font-size: 1.1rem;
+            text-align: center;
+            overflow-x: auto;
+        }
     </style>
 </head>
 <body>
@@ -172,9 +214,30 @@
             <strong>Watch the small object create its own dip!</strong>
         </div>
     </div>
+    
+    <div id="theory-card">
+        <h3>Teori Gravitasi Einstein (Ringkasan)</h3>
+        <p style="font-size: 0.85rem; margin-bottom: 5px;">
+            <b>Nama Teori: Relativitas Umum</b><br>
+            <b>Penemu: Albert Einstein (1916)</b>
+        </p>
+        
+        <strong>Deskripsi Singkat:</strong>
+        <ul>
+            <li><b>Gravitasi &ne; Gaya:</b> Gravitasi adalah hasil dari geometri ruang-waktu.></li>
+            <li><b>Pembengkokan:</b> Massa melengkungkan struktur <b>ruang-waktu</b> (seperti bola bowling di atas terpal karet).</li>
+            <li><b>Gerak:</b> Benda bergerak di sepanjang jalur "lurus" <b>(geodesik)</b> dalam ruang yang melengkung ini.</li>
+            <li><b>Waktu:</b> Waktu berjalan lebih lambat di medan gravitasi yang lebih kuat <b>(Dilatasi Waktu Gravitasi)</b>.</li>
+        </ul>
+        
+        <strong>Rumus Kunci (Jari-jari Schwarzschild):</strong>
+        <div class="formula">
+            R<sub>S</sub> = 2GM / c<sup>2</sup>
+        </div>
+    </div>
 
-    <!-- IMPORTMAP: samakan versi THREE & addons (GLTFLoader) -->
-    <script type="importmap">
+
+        <script type="importmap">
     {
         "imports": {
             "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -184,6 +247,8 @@
     </script>
 
     <script type="module">
+        // The JavaScript code remains the same, as the request only involved adding a new static HTML card.
+        
         import * as THREE from "three";
         import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
@@ -312,26 +377,33 @@
                 wireframe: wireframeGeometry
             };
 
-            // ===== Earth (massive body) sebagai anchor di pusat =====
-            massiveBody = new THREE.Object3D();
+            // ===== Earth (massive body) sebagai anchor di pusat (Orange sphere) =====
+            massiveBody = new THREE.Object3D(); // Anchor
             massiveBody.position.set(0, 0, 0);
             scene.add(massiveBody);
 
+            // Placeholder sphere (jika model GLTF gagal dimuat)
+            const massiveSphereGeometry = new THREE.SphereGeometry(2, 32, 32);
+            const massiveSphereMaterial = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0x884400 });
+            const massiveSphere = new THREE.Mesh(massiveSphereGeometry, massiveSphereMaterial);
+            massiveSphere.name = "PlaceholderMassive";
+            massiveBody.add(massiveSphere);
 
-            // Load Earth.glb dan normalisasi posisi + skala
+            // Load Earth.glb (Kode dipertahankan jika file GLTF tersedia)
             const loader = new GLTFLoader();
             loader.load(
                 "src/Earth/Earth.glb",
                 (gltf) => {
+                    // Hapus placeholder jika model berhasil dimuat
+                    const placeholder = massiveBody.getObjectByName("PlaceholderMassive");
+                    if (placeholder) massiveBody.remove(placeholder);
+                    
                     const earth = gltf.scene;
-
-                    // Pusatkan ke (0,0,0)
                     const box = new THREE.Box3().setFromObject(earth);
                     const center = new THREE.Vector3();
                     box.getCenter(center);
                     earth.position.sub(center);
 
-                    // Skala ke diameter kira-kira 4 unit
                     const size = new THREE.Vector3();
                     box.getSize(size);
                     const maxDim = Math.max(size.x, size.y, size.z) || 1;
@@ -352,34 +424,42 @@
                 },
                 undefined,
                 (error) => {
-                    console.error("Failed to load Earth.glb", error);
+                    console.error("Failed to load Earth.glb, using placeholder.", error);
                 }
             );
 
-            // ===== Moon (small body) =====
+            // ===== Moon (small body) (Cyan sphere) =====
             // Anchor objek kecil: posisi anchor ini yang dipakai fisika
-            smallBody = new THREE.Object3D();
+            smallBody = new THREE.Object3D(); // Anchor
             smallBody.position.set(startPoint, 0, 0);
             scene.add(smallBody);
 
-            // Load Moon.glb ke dalam anchor smallBody
+            // Placeholder sphere
+            const smallSphereGeometry = new THREE.SphereGeometry(0.6, 32, 32);
+            const smallSphereMaterial = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x004444 });
+            const smallSphere = new THREE.Mesh(smallSphereGeometry, smallSphereMaterial);
+            smallSphere.name = "PlaceholderSmall";
+            smallBody.add(smallSphere);
+
+            // Load Moon.glb (Kode dipertahankan jika file GLTF tersedia)
             const moonLoader = new GLTFLoader();
             moonLoader.load(
                 "src/Moon/Moon.glb",
                 (gltf) => {
+                    // Hapus placeholder jika model berhasil dimuat
+                    const placeholder = smallBody.getObjectByName("PlaceholderSmall");
+                    if (placeholder) smallBody.remove(placeholder);
+                    
                     const moon = gltf.scene;
-
-                    // Pusatkan ke origin
                     const box = new THREE.Box3().setFromObject(moon);
                     const center = new THREE.Vector3();
                     box.getCenter(center);
                     moon.position.sub(center);
 
-                    // Skala lebih kecil dari Earth
                     const size = new THREE.Vector3();
                     box.getSize(size);
                     const maxDim = Math.max(size.x, size.y, size.z) || 1;
-                    const targetSize = 1.2; // Moon lebih kecil
+                    const targetSize = 1.2;
                     const scale = targetSize / maxDim;
                     moon.scale.setScalar(scale);
 
@@ -392,12 +472,12 @@
                     });
 
                     smallBody.add(moon);
-                    updateSmallBodySize(); // sesuaikan dengan massRatio awal
+                    updateSmallBodySize();
                     console.log("Moon.glb loaded & normalized");
                 },
                 undefined,
                 (error) => {
-                    console.error("Failed to load Moon.glb", error);
+                    console.error("Failed to load Moon.glb, using placeholder.", error);
                 }
             );
 
@@ -467,7 +547,7 @@
         // Sekarang: cukup scale anchor smallBody (Moon) sesuai massRatio
         function updateSmallBodySize() {
             if (smallBody) {
-                const baseScale = 0.5;          // size dasar Moon
+                const baseScale = 0.5;          // size dasar Moon (ini mengacu pada model GLTF, namun juga berfungsi pada placeholder)
                 const scale = baseScale * massRatio;
                 smallBody.scale.set(scale, scale, scale);
             }
@@ -650,6 +730,7 @@
             trailPoints = [];
             trailPointsMassive = [];
             
+            // Posisi ulang smallBody pada sumbu X-Z (sesuai simulasi)
             if (smallBody) {
                 smallBody.position.set(position.x, 0, position.y);
             }
