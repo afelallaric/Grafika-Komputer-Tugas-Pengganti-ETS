@@ -161,7 +161,7 @@
         
         <div class="button-group">
             <button id="start-btn">Start</button>
-            <button id="reset-btn">Reset</button>
+            <button id="reset-btn">Stop</button>
         </div>
         
         <div class="info">
@@ -433,27 +433,33 @@
 
         function updateSurface(geometry) {
             const positions = geometry.attributes.position.array;
-            const M_massive = 50;
-            const M_small = massRatio * 10;
-            
+
+            // Pakai parameter awal (bentuknya bagus), tapi kita skalakan biar lebih dangkal
+            const M_massive = 50;           // massa Earth untuk visual well
+            const M_small = massRatio * 10; // massa Moon
+            const scaleWell = 0.4;          // <--- makin kecil, makin dangkal well (0.4 = 40% kedalaman awal)
+
             for (let i = 0; i < positions.length; i += 3) {
                 const x = positions[i];
                 const z = positions[i + 1];
-                
+
+                // Distance dari Earth di pusat
                 const r1 = Math.sqrt(x * x + z * z) + 0.5;
-                const depth1 = -(M_massive / 5) / (r1 * 0.5);
-                
+                const depth1 = -(M_massive / 5) / (r1 * 0.5);   // rumus awal
+
+                // Dip tambahan dari Moon
                 let depth2 = 0;
                 if (isRunning && position.x !== undefined) {
                     const dx = x - position.x;
                     const dz = -z - position.y;
                     const r2 = Math.sqrt(dx * dx + dz * dz) + 0.5;
-                    depth2 = -(M_small / 5) / (r2 * 0.8);
+                    depth2 = -(M_small / 5) / (r2 * 0.8);       // rumus awal
                 }
-                
-                positions[i + 2] = depth1 + depth2;
+
+                // Skala kedalaman supaya nggak terlalu ekstrim
+                positions[i + 2] = scaleWell * (depth1 + depth2);
             }
-            
+
             geometry.attributes.position.needsUpdate = true;
             geometry.computeVertexNormals();
         }
@@ -528,7 +534,7 @@
             requestAnimationFrame(animate);
 
             if (isRunning && smallBody && massiveBody) {
-                const G = 1;
+                const G = 0.25;
                 const M1 = 50;
                 const M2 = massRatio * 10;
                 const dt = 0.016;
